@@ -7,6 +7,8 @@ ChatGPT-style AI chatbot that provides live crypto and stock data with interacti
 - Interactive charts
 - Real-time updates
 - Professional fintech UI
+
+
 ## Installation
 
 ```bash

@@ -1,7 +1,6 @@
 import yfinance as yf
 
 
-# Search stock symbol automatically
 def search_stock_symbol(query):
     results = yf.Search(query).quotes
 
@@ -11,7 +10,6 @@ def search_stock_symbol(query):
     return None, None
 
 
-# Get stock price
 def get_stock_price(symbol):
     stock = yf.Ticker(symbol)
     data = stock.history(period="1d")
@@ -20,3 +18,10 @@ def get_stock_price(symbol):
         return data["Close"].iloc[-1]
 
     return None
+
+
+# ⭐ NEW: Get history for charts
+def get_stock_history(symbol):
+    stock = yf.Ticker(symbol)
+    data = stock.history(period="1mo")
+    return data

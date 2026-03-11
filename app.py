@@ -112,29 +112,47 @@ def metal_price_table(symbol):
     if not price_per_ounce:
         return None
 
+    # ounce → gram
     price_per_gram_usd = price_per_ounce / 31.1035
+
     price_10g_usd = price_per_gram_usd * 10
     price_1kg_usd = price_per_gram_usd * 1000
 
-    price_per_gram_inr = usd_to_inr(price_per_gram_usd)
-    price_10g_inr = usd_to_inr(price_10g_usd)
-    price_1kg_inr = usd_to_inr(price_1kg_usd)
+    # fetch exchange rates
+    try:
+        data = requests.get("https://api.exchangerate-api.com/v4/latest/USD").json()
+        rates = data["rates"]
+    except:
+        return None
 
-    df = pd.DataFrame({
-        "Unit": ["1 Gram", "10 Grams", "1 Kilogram"],
-        "USD": [
-            f"${price_per_gram_usd:.2f}",
-            f"${price_10g_usd:.2f}",
-            f"${price_1kg_usd:.2f}"
-        ],
-        "INR": [
-            f"₹{price_per_gram_inr:.2f}",
-            f"₹{price_10g_inr:.2f}",
-            f"₹{price_1kg_inr:.2f}"
-        ]
-    })
+    currencies = ["USD","INR","EUR","GBP","AED","JPY"]
 
-    return df
+    units = {
+        "1 Gram": price_per_gram_usd,
+        "10 Grams": price_10g_usd,
+        "1 Kilogram": price_1kg_usd
+    }
+
+    table = {"Unit": []}
+
+    for c in currencies:
+        table[c] = []
+
+    for unit, usd_value in units.items():
+
+        table["Unit"].append(unit)
+
+        for c in currencies:
+
+            if c == "USD":
+                price = usd_value
+            else:
+                price = usd_value * rates[c]
+
+            table[c].append(round(price,2))
+
+    import pandas as pd
+    return pd.DataFrame(table)
 
 # =========================
 # SIDEBAR

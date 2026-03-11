@@ -6,13 +6,16 @@ from streamlit_autorefresh import st_autorefresh
 from groq import Groq
 from dotenv import load_dotenv
 import os
+import pandas as pd
 
 # =========================
 # PAGE SETTINGS
 # =========================
 st.set_page_config(page_title="Market AI Assistant", layout="wide")
 
-# ---------- PRO CSS ----------
+# =========================
+# CSS
+# =========================
 st.markdown("""
 <style>
 .stApp { background-color:#0E1117; }
@@ -48,20 +51,6 @@ client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 st_autorefresh(interval=15000, key="refresh")
 
 # =========================
-# COMMODITIES
-# =========================
-COMMODITIES = {
-    "gold": "GC=F",
-    "silver": "SI=F",
-    "oil": "CL=F",
-    "crude oil": "CL=F",
-    "natural gas": "NG=F",
-    "copper": "HG=F",
-    "platinum": "PL=F",
-    "palladium": "PA=F"
-}
-
-# =========================
 # HELPERS
 # =========================
 
@@ -69,26 +58,18 @@ def ask_ai(msg):
     response = client.chat.completions.create(
         model="llama-3.1-8b-instant",
         messages=[
-            {"role":"system","content":"You are a helpful financial market assistant."},
+            {"role":"system","content":"You are a helpful financial assistant."},
             {"role":"user","content":msg}
         ]
     )
     return response.choices[0].message.content
 
 
-def get_metal_price(symbol):
-    try:
-        data = yf.Ticker(symbol).history(period="1d")
-        return data["Close"].iloc[-1]
-    except:
-        return None
-
-
 def get_crypto_price(name):
     try:
         url = f"https://api.coingecko.com/api/v3/simple/price?ids={name}&vs_currencies=usd"
-        data = requests.get(url, timeout=10).json()
-        return data[name]["usd"] if name in data else None
+        data = requests.get(url).json()
+        return data[name]["usd"]
     except:
         return None
 
@@ -105,6 +86,55 @@ def search_stock(query):
 
 def get_stock_history(symbol):
     return yf.Ticker(symbol).history(period="1mo")
+
+
+def get_metal_price(symbol):
+    try:
+        data = yf.Ticker(symbol).history(period="1d")
+        return data["Close"].iloc[-1]
+    except:
+        return None
+
+
+def usd_to_inr(usd):
+    try:
+        data = requests.get("https://api.exchangerate-api.com/v4/latest/USD").json()
+        rate = data["rates"]["INR"]
+        return usd * rate
+    except:
+        return None
+
+
+def metal_price_table(symbol):
+
+    price_per_ounce = get_metal_price(symbol)
+
+    if not price_per_ounce:
+        return None
+
+    price_per_gram_usd = price_per_ounce / 31.1035
+    price_10g_usd = price_per_gram_usd * 10
+    price_1kg_usd = price_per_gram_usd * 1000
+
+    price_per_gram_inr = usd_to_inr(price_per_gram_usd)
+    price_10g_inr = usd_to_inr(price_10g_usd)
+    price_1kg_inr = usd_to_inr(price_1kg_usd)
+
+    df = pd.DataFrame({
+        "Unit": ["1 Gram", "10 Grams", "1 Kilogram"],
+        "USD": [
+            f"${price_per_gram_usd:.2f}",
+            f"${price_10g_usd:.2f}",
+            f"${price_1kg_usd:.2f}"
+        ],
+        "INR": [
+            f"₹{price_per_gram_inr:.2f}",
+            f"₹{price_10g_inr:.2f}",
+            f"₹{price_1kg_inr:.2f}"
+        ]
+    })
+
+    return df
 
 # =========================
 # SIDEBAR
@@ -133,7 +163,7 @@ st.sidebar.caption("🔴 Live updating every 15s")
 # MAIN PAGE
 # =========================
 st.title("💬 Market AI Assistant")
-st.caption("Ask about stocks, crypto, gold, silver, or commodities.")
+st.caption("Ask about stocks, crypto, gold, silver or markets.")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -147,32 +177,30 @@ if user_input:
         "content":user_input
     })
 
-    chart = None
     lower = user_input.lower()
-    reply = None
+    chart = None
+    table = None
 
-    # ----- AUTO COMMODITY DETECTION -----
-    commodity_found = None
+    # GOLD
+    if "gold" in lower:
+        table = metal_price_table("GC=F")
+        reply = "🟡 **Gold Price Table**"
 
-    for name, symbol in COMMODITIES.items():
-        if name in lower:
-            commodity_found = name
-            price = get_metal_price(symbol)
-            if price:
-                reply = f"{commodity_found.title()} is currently trading at ${price:.2f}"
-            break
+    # SILVER
+    elif "silver" in lower:
+        table = metal_price_table("SI=F")
+        reply = "⚪ **Silver Price Table**"
 
-    # ----- AUTO CRYPTO -----
-    if reply is None:
+    # CRYPTO
+    elif any(c in lower for c in ["bitcoin","ethereum","solana","dogecoin","xrp","cardano"]):
         for c in ["bitcoin","ethereum","solana","dogecoin","xrp","cardano"]:
             if c in lower:
                 price = get_crypto_price(c)
-                if price:
-                    reply = f"{c.title()} is trading at ${price}"
+                reply = f"{c.title()} is trading at ${price}"
                 break
 
-    # ----- AUTO STOCK -----
-    if reply is None:
+    # STOCKS
+    else:
         symbol, company = search_stock(user_input)
 
         if symbol:
@@ -186,18 +214,17 @@ if user_input:
                     title=f"{company} ({symbol}) - 1 Month"
                 )
 
-                latest = data["Close"].iloc[-1]
-                reply = f"{company} ({symbol}) is trading at ${latest:.2f}"
+            latest = data["Close"].iloc[-1] if not data.empty else None
+            reply = f"{company} ({symbol}) is trading at ${latest:.2f}" if latest else ask_ai(user_input)
 
-    # ----- NORMAL AI -----
-    if reply is None:
-        with st.spinner("AI is thinking..."):
+        else:
             reply = ask_ai(user_input)
 
     st.session_state.messages.append({
         "role":"assistant",
         "content":reply,
-        "chart":chart
+        "chart":chart,
+        "table":table
     })
 
 # =========================
@@ -206,5 +233,9 @@ if user_input:
 for m in st.session_state.messages:
     with st.chat_message(m["role"]):
         st.write(m["content"])
+
+        if m.get("table") is not None:
+            st.table(m["table"])
+
         if m.get("chart"):
             st.plotly_chart(m["chart"], use_container_width=True)

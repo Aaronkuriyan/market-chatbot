@@ -53,6 +53,30 @@ st_autorefresh(interval=15000, key="refresh")
 # =========================
 # HELPERS
 # =========================
+def predict_next_day(symbol):
+
+    data = yf.Ticker(symbol).history(period="5d")
+
+    if len(data) < 2:
+        return None
+
+    last_price = data["Close"].iloc[-1]
+    prev_price = data["Close"].iloc[-2]
+
+    change = last_price - prev_price
+
+    predicted = last_price + change
+
+    lower = predicted * 0.98
+    upper = predicted * 1.02
+
+    trend = "bullish 📈" if change > 0 else "bearish 📉"
+
+    return {
+        "trend": trend,
+        "lower": round(lower,2),
+        "upper": round(upper,2)
+    }
 
 def ask_ai(msg):
     response = client.chat.completions.create(

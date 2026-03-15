@@ -246,21 +246,21 @@ if user_input:
         symbol, company = search_stock(user_input)
 
         if symbol:
-            data = get_stock_history(symbol)
+            prediction = predict_next_day(symbol)
 
-            if not data.empty:
-                chart = px.line(
-                    data,
-                    x=data.index,
-                    y="Close",
-                    title=f"{company} ({symbol}) - 1 Month"
-                )
+if prediction:
 
-            latest = data["Close"].iloc[-1] if not data.empty else None
-            reply = f"{company} ({symbol}) is trading at ${latest:.2f}" if latest else ask_ai(user_input)
+    reply = f"""
+{company} ({symbol}) is currently trading at ${latest:.2f}
 
-        else:
-            reply = ask_ai(user_input)
+📊 Trend Analysis
+Recent trend appears **{prediction['trend']}**
+
+📈 Expected Movement (Next Day)
+Estimated range: **${prediction['lower']} – ${prediction['upper']}**
+"""
+else:
+    reply = f"{company} ({symbol}) is trading at ${latest:.2f}"
 
     st.session_state.messages.append({
         "role":"assistant",

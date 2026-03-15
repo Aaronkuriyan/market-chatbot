@@ -9,32 +9,27 @@ import os
 import pandas as pd
 
 # =========================
-# PAGE SETTINGS
+# PAGE CONFIG
 # =========================
+
 st.set_page_config(page_title="Market AI Assistant", layout="wide")
 
 # =========================
-# CSS
+# STYLE
 # =========================
+
 st.markdown("""
 <style>
 .stApp { background-color:#0E1117; }
 
 section[data-testid="stSidebar"]{
     background-color:#0B0E13;
-    border-right:1px solid #222;
 }
 
 [data-testid="stChatMessage"]{
     background:#161B22;
     border-radius:12px;
     padding:12px;
-    margin-bottom:10px;
-}
-
-.block-container{
-    max-width:900px;
-    padding-top:1.5rem;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -42,17 +37,60 @@ section[data-testid="stSidebar"]{
 # =========================
 # ENV + AI
 # =========================
+
 load_dotenv()
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 # =========================
 # AUTO REFRESH
 # =========================
+
 st_autorefresh(interval=15000, key="refresh")
 
 # =========================
-# HELPERS
+# AI RESPONSE
 # =========================
+
+def ask_ai(msg):
+
+    response = client.chat.completions.create(
+        model="llama-3.1-8b-instant",
+        messages=[
+            {"role":"system","content":"You are a helpful financial assistant."},
+            {"role":"user","content":msg}
+        ]
+    )
+
+    return response.choices[0].message.content
+
+
+# =========================
+# STOCK SEARCH
+# =========================
+
+def search_stock(query):
+
+    try:
+        results = yf.Search(query).quotes
+
+        if results:
+            return results[0]["symbol"], results[0]["shortname"]
+
+    except:
+        pass
+
+    return None, None
+
+
+def get_stock_history(symbol):
+
+    return yf.Ticker(symbol).history(period="1mo")
+
+
+# =========================
+# NEXT DAY PREDICTION
+# =========================
+
 def predict_next_day(symbol):
 
     data = yf.Ticker(symbol).history(period="5d")
@@ -78,136 +116,124 @@ def predict_next_day(symbol):
         "upper": round(upper,2)
     }
 
-def ask_ai(msg):
-    response = client.chat.completions.create(
-        model="llama-3.1-8b-instant",
-        messages=[
-            {"role":"system","content":"You are a helpful financial assistant."},
-            {"role":"user","content":msg}
-        ]
-    )
-    return response.choices[0].message.content
 
+# =========================
+# CRYPTO
+# =========================
 
 def get_crypto_price(name):
+
     try:
+
         url = f"https://api.coingecko.com/api/v3/simple/price?ids={name}&vs_currencies=usd"
         data = requests.get(url).json()
+
         return data[name]["usd"]
+
     except:
+
         return None
 
 
-def search_stock(query):
-    try:
-        results = yf.Search(query).quotes
-        if results:
-            return results[0]["symbol"], results[0]["shortname"]
-    except:
-        pass
-    return None, None
-
-
-def get_stock_history(symbol):
-    return yf.Ticker(symbol).history(period="1mo")
-
+# =========================
+# METAL PRICE
+# =========================
 
 def get_metal_price(symbol):
+
     try:
+
         data = yf.Ticker(symbol).history(period="1d")
+
         return data["Close"].iloc[-1]
+
     except:
+
         return None
 
 
-def usd_to_inr(usd):
-    try:
-        data = requests.get("https://api.exchangerate-api.com/v4/latest/USD").json()
-        rate = data["rates"]["INR"]
-        return usd * rate
-    except:
-        return None
-
+# =========================
+# METAL TABLE MULTI-CURRENCY
+# =========================
 
 def metal_price_table(symbol):
 
-    price_per_ounce = get_metal_price(symbol)
+    ounce_price = get_metal_price(symbol)
 
-    if not price_per_ounce:
+    if not ounce_price:
         return None
 
-    # ounce → gram
-    price_per_gram_usd = price_per_ounce / 31.1035
+    gram_usd = ounce_price / 31.1035
 
-    price_10g_usd = price_per_gram_usd * 10
-    price_1kg_usd = price_per_gram_usd * 1000
+    units = {
+        "1 Gram": gram_usd,
+        "10 Grams": gram_usd * 10,
+        "1 Kilogram": gram_usd * 1000
+    }
 
-    # fetch exchange rates
-    try:
-        data = requests.get("https://api.exchangerate-api.com/v4/latest/USD").json()
-        rates = data["rates"]
-    except:
-        return None
+    rates = requests.get(
+        "https://api.exchangerate-api.com/v4/latest/USD"
+    ).json()["rates"]
 
     currencies = ["USD","INR","EUR","GBP","AED","JPY"]
 
-    units = {
-        "1 Gram": price_per_gram_usd,
-        "10 Grams": price_10g_usd,
-        "1 Kilogram": price_1kg_usd
-    }
+    table = {"Unit": list(units.keys())}
 
-    table = {"Unit": []}
+    for currency in currencies:
 
-    for c in currencies:
-        table[c] = []
+        values = []
 
-    for unit, usd_value in units.items():
+        for usd in units.values():
 
-        table["Unit"].append(unit)
-
-        for c in currencies:
-
-            if c == "USD":
-                price = usd_value
+            if currency == "USD":
+                values.append(round(usd,2))
             else:
-                price = usd_value * rates[c]
+                values.append(round(usd * rates[currency],2))
 
-            table[c].append(round(price,2))
+        table[currency] = values
 
-    import pandas as pd
     return pd.DataFrame(table)
+
 
 # =========================
 # SIDEBAR
 # =========================
-st.sidebar.title("💹 Market AI")
 
-if st.sidebar.button("➕ New Chat"):
+st.sidebar.title("Market AI")
+
+if st.sidebar.button("New Chat"):
+
     st.session_state.messages = []
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("⭐ Watchlist")
+st.sidebar.subheader("Watchlist")
 
 watchlist = ["AAPL","TSLA","NVDA","MSFT","BTC-USD","GC=F","SI=F"]
 
 for s in watchlist:
+
     try:
-        p = yf.Ticker(s).history(period="1d")["Close"].iloc[-1]
-        st.sidebar.write(f"{s}  ${p:.2f}")
+
+        price = yf.Ticker(s).history(period="1d")["Close"].iloc[-1]
+
+        st.sidebar.write(f"{s}  ${price:.2f}")
+
     except:
+
         pass
 
-st.sidebar.markdown("---")
-st.sidebar.caption("🔴 Live updating every 15s")
+st.sidebar.caption("Live update every 15 seconds")
 
 # =========================
 # MAIN PAGE
 # =========================
-st.title("💬 Market AI Assistant")
+
+st.title("Market AI Assistant")
+
 st.caption("Ask about stocks, crypto, gold, silver or markets.")
 
 if "messages" not in st.session_state:
+
     st.session_state.messages = []
 
 user_input = st.chat_input("Ask anything about markets...")
@@ -219,48 +245,85 @@ if user_input:
         "content":user_input
     })
 
-    lower = user_input.lower()
     chart = None
     table = None
+    reply = None
 
-    # GOLD
+    lower = user_input.lower()
+
+# =========================
+# GOLD
+# =========================
+
     if "gold" in lower:
+
         table = metal_price_table("GC=F")
-        reply = "🟡 **Gold Price Table**"
 
-    # SILVER
+        reply = "Gold price table"
+
+# =========================
+# SILVER
+# =========================
+
     elif "silver" in lower:
+
         table = metal_price_table("SI=F")
-        reply = "⚪ **Silver Price Table**"
 
-    # CRYPTO
-    elif any(c in lower for c in ["bitcoin","ethereum","solana","dogecoin","xrp","cardano"]):
-        for c in ["bitcoin","ethereum","solana","dogecoin","xrp","cardano"]:
-            if c in lower:
-                price = get_crypto_price(c)
-                reply = f"{c.title()} is trading at ${price}"
-                break
+        reply = "Silver price table"
 
-    # STOCKS
+# =========================
+# CRYPTO
+# =========================
+
+    elif "bitcoin" in lower:
+
+        price = get_crypto_price("bitcoin")
+
+        reply = f"Bitcoin is trading at ${price}"
+
+# =========================
+# STOCKS
+# =========================
+
     else:
+
         symbol, company = search_stock(user_input)
 
         if symbol:
-            prediction = predict_next_day(symbol)
 
-if prediction:
+            data = get_stock_history(symbol)
 
-    reply = f"""
+            if not data.empty:
+
+                chart = px.line(
+                    data,
+                    x=data.index,
+                    y="Close",
+                    title=f"{company} ({symbol}) - 1 Month"
+                )
+
+                latest = data["Close"].iloc[-1]
+
+                prediction = predict_next_day(symbol)
+
+                if prediction:
+
+                    reply = f"""
 {company} ({symbol}) is currently trading at ${latest:.2f}
 
-📊 Trend Analysis
-Recent trend appears **{prediction['trend']}**
+Trend: {prediction['trend']}
 
-📈 Expected Movement (Next Day)
-Estimated range: **${prediction['lower']} – ${prediction['upper']}**
+Expected next-day range:
+${prediction['lower']} – ${prediction['upper']}
 """
-else:
-    reply = f"{company} ({symbol}) is trading at ${latest:.2f}"
+
+                else:
+
+                    reply = f"{company} ({symbol}) is trading at ${latest:.2f}"
+
+        else:
+
+            reply = ask_ai(user_input)
 
     st.session_state.messages.append({
         "role":"assistant",
@@ -272,8 +335,11 @@ else:
 # =========================
 # DISPLAY CHAT
 # =========================
+
 for m in st.session_state.messages:
+
     with st.chat_message(m["role"]):
+
         st.write(m["content"])
 
         if m.get("table") is not None:

@@ -1,7 +1,4 @@
 streamlit
-plotly
+openai>=1.0.0
 yfinance
-requests
-streamlit-autorefresh
-groq
 python-dotenv

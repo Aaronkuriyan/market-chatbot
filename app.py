@@ -43,7 +43,7 @@ def get_stock_data(symbol):
 def ask_ai(user_input):
     try:
         response = client.chat.completions.create(
-            model="llama3-8b-8192",
+            model="llama3-8b-8192",  # ✅ FIXED HERE
             messages=[
                 {
                     "role": "system",
@@ -60,6 +60,7 @@ def ask_ai(user_input):
 
     except Exception as e:
         return f"❌ AI Error: {str(e)}"
+
 
 
 # ========================

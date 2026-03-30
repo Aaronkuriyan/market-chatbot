@@ -1,19 +1,18 @@
 import streamlit as st
 from openai import OpenAI
 import yfinance as yf
-import os
 import streamlit as st
+import os
 
-# Try Streamlit Secrets first, then fallback to .env
 api_key = None
 
-if "OPENAI_API_KEY" in st.secrets:
-    api_key = st.secrets["OPENAI_API_KEY"]
+if "GROQ_API_KEY" in st.secrets:
+    api_key = st.secrets["GROQ_API_KEY"]
 else:
-    api_key = os.getenv("OPENAI_API_KEY")
+    api_key = os.getenv("GROQ_API_KEY")
 
 if not api_key:
-    st.error("❌ OPENAI_API_KEY not found. Set it in Streamlit Secrets.")
+    st.error("❌ GROQ_API_KEY not found.")
     st.stop()
 
 client = OpenAI(api_key=api_key)

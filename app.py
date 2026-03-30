@@ -15,7 +15,9 @@ if not api_key:
     st.error("❌ GROQ_API_KEY not found.")
     st.stop()
 
-client = OpenAI(api_key=api_key)
+from groq import Groq
+
+client = Groq(api_key=api_key)
 
 # ========================
 # 📊 STOCK DATA FUNCTION

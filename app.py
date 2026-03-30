@@ -2,20 +2,18 @@ import streamlit as st
 from openai import OpenAI
 import yfinance as yf
 import os
-from dotenv import load_dotenv
+import streamlit as st
 
-# ========================
-# 🔐 LOAD ENV VARIABLES
-# ========================
-load_dotenv()
+# Try Streamlit Secrets first, then fallback to .env
+api_key = None
 
-# ========================
-# 🔑 API KEY
-# ========================
-api_key = os.getenv("OPENAI_API_KEY")
+if "OPENAI_API_KEY" in st.secrets:
+    api_key = st.secrets["OPENAI_API_KEY"]
+else:
+    api_key = os.getenv("OPENAI_API_KEY")
 
 if not api_key:
-    st.error("❌ OPENAI_API_KEY not found. Please set it in your .env file.")
+    st.error("❌ OPENAI_API_KEY not found. Set it in Streamlit Secrets.")
     st.stop()
 
 client = OpenAI(api_key=api_key)

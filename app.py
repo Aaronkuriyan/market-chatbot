@@ -5,7 +5,7 @@ from groq import Groq
 import plotly.graph_objects as go
 
 # ========================
-# 🔑 API KEY HANDLING
+# 🔑 API KEY
 # ========================
 api_key = None
 
@@ -15,18 +15,24 @@ else:
     api_key = os.getenv("GROQ_API_KEY")
 
 if not api_key:
-    st.error("❌ GROQ_API_KEY not found. Set it in Streamlit Secrets.")
+    st.error("❌ GROQ_API_KEY not found.")
     st.stop()
 
 client = Groq(api_key=api_key)
 
 # ========================
-# 🌍 USD → INR
+# 🌍 USD → INR (LIVE)
 # ========================
-USD_TO_INR = 83
+def get_usd_to_inr():
+    try:
+        data = yf.Ticker("INR=X").history(period="1d")
+        return data["Close"].iloc[-1]
+    except:
+        return 83
+
 
 # ========================
-# 📊 STOCK PRICE
+# 📊 STOCK PRICE (INR)
 # ========================
 def get_stock_price(symbol):
     try:
@@ -34,13 +40,17 @@ def get_stock_price(symbol):
         if data.empty:
             return None
 
-        price = data["Close"].iloc[-1]
-        return f"📈 {symbol} Price: ${price:.2f}"
+        usd_price = data["Close"].iloc[-1]
+        rate = get_usd_to_inr()
+        inr_price = usd_price * rate
+
+        return f"📈 {symbol} Price: ₹{inr_price:,.2f}"
     except:
         return None
 
+
 # ========================
-# 🪙 GOLD PRICE
+# 🪙 GOLD PRICE (INR)
 # ========================
 def get_gold_price():
     try:
@@ -49,35 +59,43 @@ def get_gold_price():
             return None
 
         usd_price = data["Close"].iloc[-1]
-        inr_price = usd_price * USD_TO_INR
+        rate = get_usd_to_inr()
+        inr_price = usd_price * rate
 
-        return f"🪙 Gold Price:\nUSD: ${usd_price:.2f}\nINR: ₹{inr_price:,.2f}"
+        return f"🪙 Gold Price: ₹{inr_price:,.2f} (per ounce)"
     except:
         return None
 
+
 # ========================
-# 📈 CHART
+# 📈 CHART (INR)
 # ========================
 def plot_chart(symbol):
     try:
         data = yf.Ticker(symbol).history(period="1mo")
+        rate = get_usd_to_inr()
+
+        data["INR"] = data["Close"] * rate
 
         fig = go.Figure()
+
         fig.add_trace(go.Scatter(
             x=data.index,
-            y=data["Close"],
+            y=data["INR"],
             mode='lines',
-            name='Price'
+            name='Price (₹)'
         ))
 
         fig.update_layout(
-            title=f"{symbol} Price (1 Month)",
-            template="plotly_dark"
+            title=f"{symbol} Price (INR - 1 Month)",
+            template="plotly_dark",
+            yaxis_title="Price (₹)"
         )
 
         return fig
     except:
         return None
+
 
 # ========================
 # 🧠 AI ADVICE
@@ -86,6 +104,8 @@ def get_investment_advice(context_data):
     try:
         prompt = f"""
 You are a financial expert.
+
+All prices are in INR.
 
 Based on this data:
 {context_data}
@@ -105,6 +125,7 @@ Give:
     except Exception as e:
         return str(e)
 
+
 # ========================
 # 🤖 AI RESPONSE
 # ========================
@@ -113,10 +134,12 @@ def ask_ai(user_input, context_data=None):
         system_prompt = """
 You are a professional financial advisor.
 
-Rules:
-- Use real-time data if available
-- Give structured insights
-- Include risks and suggestions
+All prices are in INR (₹).
+
+Give:
+- Clear insights
+- Risks
+- Suggestions
 """
 
         if context_data:
@@ -125,8 +148,6 @@ User Question: {user_input}
 
 Real-time Data:
 {context_data}
-
-Use this data in your answer.
 """
         else:
             user_prompt = user_input
@@ -144,11 +165,12 @@ Use this data in your answer.
     except Exception as e:
         return f"❌ AI Error: {str(e)}"
 
+
 # ========================
 # 🎨 UI
 # ========================
 st.set_page_config(page_title="AI Market Chatbot", page_icon="📈")
-st.title("📈 AI Market Chatbot")
+st.title("📈 AI Market Chatbot (INR)")
 
 # ========================
 # 💼 PORTFOLIO
@@ -166,11 +188,17 @@ if st.sidebar.button("Add") and symbol:
 
 for sym, qty in st.session_state.portfolio.items():
     try:
-        price = yf.Ticker(sym).history(period="1d")["Close"].iloc[-1]
-        value = price * qty
-        st.sidebar.write(f"{sym}: {qty} shares = ${value:.2f}")
+        data = yf.Ticker(sym).history(period="1d")
+        price = data["Close"].iloc[-1]
+        rate = get_usd_to_inr()
+
+        inr_price = price * rate
+        value = inr_price * qty
+
+        st.sidebar.write(f"{sym}: {qty} shares = ₹{value:,.2f}")
     except:
         pass
+
 
 # ========================
 # 💬 CHAT HISTORY
@@ -180,6 +208,7 @@ if "messages" not in st.session_state:
 
 for msg in st.session_state.messages:
     st.chat_message(msg["role"]).write(msg["content"])
+
 
 # ========================
 # 💬 USER INPUT
@@ -206,30 +235,22 @@ if user_input:
             if context_data:
                 break
 
-    # ========================
-    # 🤖 AI RESPONSE
-    # ========================
+    # AI RESPONSE
     with st.spinner("📊 Analyzing market..."):
         ai_reply = ask_ai(user_input, context_data)
 
-    # ========================
-    # 📊 CHART
-    # ========================
+    # CHART
     if detected_symbol:
         fig = plot_chart(detected_symbol)
         if fig:
             st.plotly_chart(fig, use_container_width=True)
 
-    # ========================
-    # 🧠 AI ADVICE
-    # ========================
+    # AI ADVICE
     if context_data:
         advice = get_investment_advice(context_data)
         ai_reply += f"\n\n📊 **AI Investment Insight:**\n{advice}"
 
-    # ========================
     # FINAL RESPONSE
-    # ========================
     if context_data:
         final_reply = f"{context_data}\n\n{ai_reply}"
     else:

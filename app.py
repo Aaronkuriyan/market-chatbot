@@ -65,7 +65,33 @@ def plot_chart(symbol):
     except:
         return None
     
+# ========================
+# 🧠 AI INVESTMENT ADVICE
+# ========================
+def get_investment_advice(context_data):
+    try:
+        prompt = f"""
+You are a financial expert.
 
+Based on this data:
+{context_data}
+
+Give:
+- Buy / Hold / Sell
+- Reason
+- Risk level
+"""
+
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        return response.choices[0].message.content
+
+    except Exception as e:
+        return str(e)
+    
 # ========================
 # 🪙 GOLD PRICE FUNCTION
 # ========================

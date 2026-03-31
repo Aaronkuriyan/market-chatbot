@@ -14,24 +14,50 @@ else:
     api_key = os.getenv("GROQ_API_KEY")
 
 if not api_key:
-    st.error("❌ GROQ_API_KEY not found. Please set it in Streamlit Secrets.")
+    st.error("❌ GROQ_API_KEY not found. Set it in Streamlit Secrets.")
     st.stop()
 
 client = Groq(api_key=api_key)
 
 # ========================
-# 📊 STOCK DATA FUNCTION
+# 🌍 USD → INR (approx)
 # ========================
-def get_stock_data(symbol):
-    try:
-        stock = yf.Ticker(symbol)
-        data = stock.history(period="1d")
+USD_TO_INR = 83
 
+
+# ========================
+# 📊 STOCK PRICE FUNCTION
+# ========================
+def get_stock_price(symbol):
+    try:
+        data = yf.Ticker(symbol).history(period="1d")
         if data.empty:
             return None
 
         price = data["Close"].iloc[-1]
-        return f"📊 Current price of {symbol} is ${price:.2f}"
+        return f"📈 {symbol} Price: ${price:.2f}"
+
+    except:
+        return None
+
+
+# ========================
+# 🪙 GOLD PRICE FUNCTION
+# ========================
+def get_gold_price():
+    try:
+        data = yf.Ticker("GC=F").history(period="1d")
+        if data.empty:
+            return None
+
+        usd_price = data["Close"].iloc[-1]
+        inr_price = usd_price * USD_TO_INR
+
+        return (
+            f"🪙 Gold Price (per ounce):\n"
+            f"USD: ${usd_price:.2f}\n"
+            f"INR: ₹{inr_price:,.2f}"
+        )
 
     except:
         return None
@@ -40,19 +66,35 @@ def get_stock_data(symbol):
 # ========================
 # 🤖 AI FUNCTION
 # ========================
-def ask_ai(user_input):
+def ask_ai(user_input, context_data=None):
     try:
+        system_prompt = """
+You are a professional financial advisor.
+
+Rules:
+- Use real-time data if provided.
+- Give structured answers.
+- Include insights, risks, and suggestions.
+- Be concise but informative.
+"""
+
+        user_prompt = user_input
+
+        if context_data:
+            user_prompt = f"""
+User Question: {user_input}
+
+Real-time Data:
+{context_data}
+
+Use this data in your answer.
+"""
+
         response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",  # ✅ latest working model
+            model="llama-3.3-70b-versatile",
             messages=[
-                {
-                    "role": "system",
-                    "content": "You are a professional financial advisor. Provide clear, structured, and practical financial insights."
-                },
-                {
-                    "role": "user",
-                    "content": user_input
-                }
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
             ]
         )
 
@@ -60,6 +102,8 @@ def ask_ai(user_input):
 
     except Exception as e:
         return f"❌ AI Error: {str(e)}"
+
+
 # ========================
 # 🎨 STREAMLIT UI
 # ========================
@@ -71,54 +115,47 @@ st.title("📈 AI Market Chatbot")
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Display previous messages
+# Display chat
 for msg in st.session_state.messages:
     st.chat_message(msg["role"]).write(msg["content"])
 
-# User input
-user_input = st.chat_input("Ask about stocks, crypto, or market trends...")
+# Input
+user_input = st.chat_input("Ask about stocks, gold, crypto, or market trends...")
 
 if user_input:
-    # Show user message
     st.chat_message("user").write(user_input)
     st.session_state.messages.append({"role": "user", "content": user_input})
 
+    context_data = None
+
     # ========================
-    # 🧠 STOCK DETECTION
+    # 🧠 SMART DETECTION
     # ========================
-    stock_response = None
+    lower_query = user_input.lower()
 
-    valid_symbols = [
-        "AAPL", "TSLA", "GOOGL", "MSFT",
-        "AMZN", "META", "NFLX", "NVDA"
-    ]
+    # GOLD
+    if "gold" in lower_query:
+        context_data = get_gold_price()
 
-    words = user_input.upper().split()
-
-    for word in words:
-        if word in valid_symbols:
-            stock_response = get_stock_data(word)
-            break
-
-    # Detect "price of XYZ"
-    if not stock_response and "price of" in user_input.lower():
-        try:
-            symbol = user_input.split()[-1].upper()
-            stock_response = get_stock_data(symbol)
-        except:
-            pass
+    # STOCKS
+    elif any(stock in lower_query for stock in ["aapl", "tsla", "msft", "googl", "amzn", "meta", "nvda"]):
+        for word in user_input.upper().split():
+            context_data = get_stock_price(word)
+            if context_data:
+                break
 
     # ========================
     # 🤖 AI RESPONSE
     # ========================
     with st.spinner("📊 Analyzing market..."):
-        ai_reply = ask_ai(user_input)
+        ai_reply = ask_ai(user_input, context_data)
 
-    final_reply = (
-        f"{stock_response}\n\n{ai_reply}" if stock_response else ai_reply
-    )
+    # Combine
+    if context_data:
+        final_reply = f"{context_data}\n\n{ai_reply}"
+    else:
+        final_reply = ai_reply
 
-    # Show assistant response
     st.chat_message("assistant").write(final_reply)
     st.session_state.messages.append(
         {"role": "assistant", "content": final_reply}

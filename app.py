@@ -3,6 +3,7 @@ import yfinance as yf
 import os
 from groq import Groq
 import plotly.graph_objects as go
+
 # ========================
 # 🔑 API KEY HANDLING
 # ========================
@@ -20,13 +21,12 @@ if not api_key:
 client = Groq(api_key=api_key)
 
 # ========================
-# 🌍 USD → INR (approx)
+# 🌍 USD → INR
 # ========================
 USD_TO_INR = 83
 
-
 # ========================
-# 📊 STOCK PRICE FUNCTION
+# 📊 STOCK PRICE
 # ========================
 def get_stock_price(symbol):
     try:
@@ -36,12 +36,27 @@ def get_stock_price(symbol):
 
         price = data["Close"].iloc[-1]
         return f"📈 {symbol} Price: ${price:.2f}"
-
     except:
         return None
 
 # ========================
-# 📈 CHART FUNCTION
+# 🪙 GOLD PRICE
+# ========================
+def get_gold_price():
+    try:
+        data = yf.Ticker("GC=F").history(period="1d")
+        if data.empty:
+            return None
+
+        usd_price = data["Close"].iloc[-1]
+        inr_price = usd_price * USD_TO_INR
+
+        return f"🪙 Gold Price:\nUSD: ${usd_price:.2f}\nINR: ₹{inr_price:,.2f}"
+    except:
+        return None
+
+# ========================
+# 📈 CHART
 # ========================
 def plot_chart(symbol):
     try:
@@ -56,17 +71,16 @@ def plot_chart(symbol):
         ))
 
         fig.update_layout(
-            title=f"{symbol} Price (Last 1 Month)",
+            title=f"{symbol} Price (1 Month)",
             template="plotly_dark"
         )
 
         return fig
-
     except:
         return None
-    
+
 # ========================
-# 🧠 AI INVESTMENT ADVICE
+# 🧠 AI ADVICE
 # ========================
 def get_investment_advice(context_data):
     try:
@@ -88,34 +102,11 @@ Give:
         )
 
         return response.choices[0].message.content
-
     except Exception as e:
         return str(e)
-    
-# ========================
-# 🪙 GOLD PRICE FUNCTION
-# ========================
-def get_gold_price():
-    try:
-        data = yf.Ticker("GC=F").history(period="1d")
-        if data.empty:
-            return None
-
-        usd_price = data["Close"].iloc[-1]
-        inr_price = usd_price * USD_TO_INR
-
-        return (
-            f"🪙 Gold Price (per ounce):\n"
-            f"USD: ${usd_price:.2f}\n"
-            f"INR: ₹{inr_price:,.2f}"
-        )
-
-    except:
-        return None
-
 
 # ========================
-# 🤖 AI FUNCTION
+# 🤖 AI RESPONSE
 # ========================
 def ask_ai(user_input, context_data=None):
     try:
@@ -123,13 +114,10 @@ def ask_ai(user_input, context_data=None):
 You are a professional financial advisor.
 
 Rules:
-- Use real-time data if provided.
-- Give structured answers.
-- Include insights, risks, and suggestions.
-- Be concise but informative.
+- Use real-time data if available
+- Give structured insights
+- Include risks and suggestions
 """
-
-        user_prompt = user_input
 
         if context_data:
             user_prompt = f"""
@@ -140,6 +128,8 @@ Real-time Data:
 
 Use this data in your answer.
 """
+        else:
+            user_prompt = user_input
 
         response = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
@@ -154,16 +144,14 @@ Use this data in your answer.
     except Exception as e:
         return f"❌ AI Error: {str(e)}"
 
-
 # ========================
-# 🎨 STREAMLIT UI
+# 🎨 UI
 # ========================
 st.set_page_config(page_title="AI Market Chatbot", page_icon="📈")
-
 st.title("📈 AI Market Chatbot")
 
 # ========================
-# 💼 PORTFOLIO TRACKER
+# 💼 PORTFOLIO
 # ========================
 if "portfolio" not in st.session_state:
     st.session_state.portfolio = {}
@@ -173,10 +161,9 @@ st.sidebar.title("💼 Portfolio")
 symbol = st.sidebar.text_input("Add Stock (e.g. AAPL)")
 qty = st.sidebar.number_input("Quantity", min_value=1)
 
-if st.sidebar.button("Add"):
+if st.sidebar.button("Add") and symbol:
     st.session_state.portfolio[symbol.upper()] = qty
 
-# Show portfolio
 for sym, qty in st.session_state.portfolio.items():
     try:
         price = yf.Ticker(sym).history(period="1d")["Close"].iloc[-1]
@@ -185,26 +172,26 @@ for sym, qty in st.session_state.portfolio.items():
     except:
         pass
 
-# Chat history
+# ========================
+# 💬 CHAT HISTORY
+# ========================
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Display chat
 for msg in st.session_state.messages:
     st.chat_message(msg["role"]).write(msg["content"])
 
-# Input
-user_input = st.chat_input("Ask about stocks, gold, crypto, or market trends...")
+# ========================
+# 💬 USER INPUT
+# ========================
+user_input = st.chat_input("Ask about stocks, gold, or market trends...")
 
 if user_input:
     st.chat_message("user").write(user_input)
     st.session_state.messages.append({"role": "user", "content": user_input})
 
     context_data = None
-
-    # ========================
-    # 🧠 SMART DETECTION
-    # ========================
+    detected_symbol = None
     lower_query = user_input.lower()
 
     # GOLD
@@ -214,6 +201,7 @@ if user_input:
     # STOCKS
     elif any(stock in lower_query for stock in ["aapl", "tsla", "msft", "googl", "amzn", "meta", "nvda"]):
         for word in user_input.upper().split():
+            detected_symbol = word
             context_data = get_stock_price(word)
             if context_data:
                 break
@@ -225,20 +213,23 @@ if user_input:
         ai_reply = ask_ai(user_input, context_data)
 
     # ========================
-# 📊 SHOW CHART
-# ========================
-if context_data and any(stock in user_input.lower() for stock in ["aapl", "tsla", "msft", "googl", "amzn"]):
-    fig = plot_chart(user_input.upper())
-    if fig:
-        st.plotly_chart(fig, use_container_width=True)
+    # 📊 CHART
+    # ========================
+    if detected_symbol:
+        fig = plot_chart(detected_symbol)
+        if fig:
+            st.plotly_chart(fig, use_container_width=True)
 
-# ========================
-# 🧠 AI ADVICE
-# ========================
-if context_data:
-    advice = get_investment_advice(context_data)
-    ai_reply += f"\n\n📊 AI Recommendation:\n{advice}"
-    # Combine
+    # ========================
+    # 🧠 AI ADVICE
+    # ========================
+    if context_data:
+        advice = get_investment_advice(context_data)
+        ai_reply += f"\n\n📊 **AI Investment Insight:**\n{advice}"
+
+    # ========================
+    # FINAL RESPONSE
+    # ========================
     if context_data:
         final_reply = f"{context_data}\n\n{ai_reply}"
     else:

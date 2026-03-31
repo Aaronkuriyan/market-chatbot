@@ -110,7 +110,7 @@ def ask_ai(q, context=None):
 # 🎨 UI
 # ========================
 st.set_page_config(layout="wide", page_title="Trading Dashboard")
-st.title("📊 Zerodha-Style AI Trading Dashboard")
+st.title("📊 Marcket-ChatBot")
 
 # ========================
 # 💼 PORTFOLIO

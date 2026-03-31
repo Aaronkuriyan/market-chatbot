@@ -162,6 +162,29 @@ st.set_page_config(page_title="AI Market Chatbot", page_icon="📈")
 
 st.title("📈 AI Market Chatbot")
 
+# ========================
+# 💼 PORTFOLIO TRACKER
+# ========================
+if "portfolio" not in st.session_state:
+    st.session_state.portfolio = {}
+
+st.sidebar.title("💼 Portfolio")
+
+symbol = st.sidebar.text_input("Add Stock (e.g. AAPL)")
+qty = st.sidebar.number_input("Quantity", min_value=1)
+
+if st.sidebar.button("Add"):
+    st.session_state.portfolio[symbol.upper()] = qty
+
+# Show portfolio
+for sym, qty in st.session_state.portfolio.items():
+    try:
+        price = yf.Ticker(sym).history(period="1d")["Close"].iloc[-1]
+        value = price * qty
+        st.sidebar.write(f"{sym}: {qty} shares = ${value:.2f}")
+    except:
+        pass
+
 # Chat history
 if "messages" not in st.session_state:
     st.session_state.messages = []

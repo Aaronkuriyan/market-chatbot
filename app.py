@@ -224,6 +224,20 @@ if user_input:
     with st.spinner("📊 Analyzing market..."):
         ai_reply = ask_ai(user_input, context_data)
 
+    # ========================
+# 📊 SHOW CHART
+# ========================
+if context_data and any(stock in user_input.lower() for stock in ["aapl", "tsla", "msft", "googl", "amzn"]):
+    fig = plot_chart(user_input.upper())
+    if fig:
+        st.plotly_chart(fig, use_container_width=True)
+
+# ========================
+# 🧠 AI ADVICE
+# ========================
+if context_data:
+    advice = get_investment_advice(context_data)
+    ai_reply += f"\n\n📊 AI Recommendation:\n{advice}"
     # Combine
     if context_data:
         final_reply = f"{context_data}\n\n{ai_reply}"

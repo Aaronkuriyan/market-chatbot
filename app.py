@@ -2,7 +2,7 @@ import streamlit as st
 import yfinance as yf
 import os
 from groq import Groq
-
+import plotly.graph_objects as go
 # ========================
 # 🔑 API KEY HANDLING
 # ========================
@@ -40,6 +40,31 @@ def get_stock_price(symbol):
     except:
         return None
 
+# ========================
+# 📈 CHART FUNCTION
+# ========================
+def plot_chart(symbol):
+    try:
+        data = yf.Ticker(symbol).history(period="1mo")
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=data.index,
+            y=data["Close"],
+            mode='lines',
+            name='Price'
+        ))
+
+        fig.update_layout(
+            title=f"{symbol} Price (Last 1 Month)",
+            template="plotly_dark"
+        )
+
+        return fig
+
+    except:
+        return None
+    
 
 # ========================
 # 🪙 GOLD PRICE FUNCTION

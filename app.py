@@ -7,12 +7,7 @@ import plotly.graph_objects as go
 # ========================
 # 🔑 API KEY
 # ========================
-api_key = None
-
-if "GROQ_API_KEY" in st.secrets:
-    api_key = st.secrets["GROQ_API_KEY"]
-else:
-    api_key = os.getenv("GROQ_API_KEY")
+api_key = st.secrets.get("GROQ_API_KEY") or os.getenv("GROQ_API_KEY")
 
 if not api_key:
     st.error("❌ GROQ_API_KEY not found.")
@@ -25,90 +20,54 @@ client = Groq(api_key=api_key)
 # ========================
 def get_usd_to_inr():
     try:
-        data = yf.Ticker("INR=X").history(period="1d")
-        return data["Close"].iloc[-1]
+        return yf.Ticker("INR=X").history(period="1d")["Close"].iloc[-1]
     except:
         return 83
 
 
 # ========================
-# 📊 STOCK PRICE (INR)
+# 📊 STOCK PRICE
 # ========================
-def get_stock_price(symbol):
+def get_stock_data(symbol):
     try:
-        data = yf.Ticker(symbol).history(period="1d")
-        if data.empty:
-            return None
-
-        usd_price = data["Close"].iloc[-1]
+        data = yf.Ticker(symbol).history(period="2d")
         rate = get_usd_to_inr()
-        inr_price = usd_price * rate
 
-        return f"📈 {symbol} Price: ₹{inr_price:,.2f}"
+        latest = data["Close"].iloc[-1] * rate
+        prev = data["Close"].iloc[-2] * rate
+
+        change = latest - prev
+        percent = (change / prev) * 100
+
+        return latest, change, percent
     except:
-        return None
+        return None, None, None
 
 
 # ========================
-# 🪙 GOLD PRICE (INR)
+# 📈 CHART (ZERODHA STYLE)
 # ========================
-def get_gold_price():
-    try:
-        data = yf.Ticker("GC=F").history(period="1d")
-        rate = get_usd_to_inr()
-        price = data["Close"].iloc[-1] * rate
-
-        return f"🪙 Gold Price: ₹{price:,.2f}"
-    except:
-        return None
-
-
-# ========================
-# 📈 ZERODHA STYLE CHART
-# ========================
-def plot_candlestick(symbol):
+def plot_chart(symbol):
     try:
         data = yf.Ticker(symbol).history(period="1mo")
         rate = get_usd_to_inr()
 
-        # Convert to INR
-        data["Open"] *= rate
-        data["High"] *= rate
-        data["Low"] *= rate
-        data["Close"] *= rate
+        data[["Open", "High", "Low", "Close"]] *= rate
 
         fig = go.Figure()
 
-        # Candlestick
         fig.add_trace(go.Candlestick(
             x=data.index,
             open=data["Open"],
             high=data["High"],
             low=data["Low"],
-            close=data["Close"],
-            name="Price"
-        ))
-
-        # Volume
-        fig.add_trace(go.Bar(
-            x=data.index,
-            y=data["Volume"],
-            name="Volume",
-            yaxis="y2",
-            opacity=0.3
+            close=data["Close"]
         ))
 
         fig.update_layout(
-            title=f"{symbol} Price Chart (INR)",
             template="plotly_dark",
-            xaxis_rangeslider_visible=False,
-            yaxis_title="Price (₹)",
-            yaxis2=dict(
-                overlaying='y',
-                side='right',
-                showgrid=False,
-                title='Volume'
-            )
+            title=f"{symbol} Chart (INR)",
+            xaxis_rangeslider_visible=False
         )
 
         return fig
@@ -117,46 +76,11 @@ def plot_candlestick(symbol):
 
 
 # ========================
-# 🧠 AI FUNCTIONS
+# 🤖 AI
 # ========================
-def ask_ai(user_input, context_data=None):
+def ask_ai(query, context=None):
     try:
-        system_prompt = """
-You are a professional financial advisor.
-All prices are in INR.
-Give clear insights, risks, and suggestions.
-"""
-
-        if context_data:
-            user_prompt = f"{user_input}\n\nData:\n{context_data}"
-        else:
-            user_prompt = user_input
-
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ]
-        )
-
-        return response.choices[0].message.content
-
-    except Exception as e:
-        return str(e)
-
-
-def get_investment_advice(context_data):
-    try:
-        prompt = f"""
-Based on this data:
-{context_data}
-
-Give:
-- Buy / Hold / Sell
-- Reason
-- Risk level
-"""
+        prompt = f"{query}\n\nData:\n{context}" if context else query
 
         response = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
@@ -164,16 +88,15 @@ Give:
         )
 
         return response.choices[0].message.content
-
     except:
-        return "Error generating advice"
+        return "Error"
 
 
 # ========================
 # 🎨 UI
 # ========================
-st.set_page_config(page_title="AI Market Chatbot", page_icon="📈")
-st.title("📈 AI Market Chatbot (Pro)")
+st.set_page_config(page_title="Market Dashboard", page_icon="📈")
+st.title("📊 AI Market Dashboard (Pro)")
 
 # ========================
 # 💼 PORTFOLIO
@@ -181,24 +104,56 @@ st.title("📈 AI Market Chatbot (Pro)")
 if "portfolio" not in st.session_state:
     st.session_state.portfolio = {}
 
-st.sidebar.title("💼 Portfolio")
+st.sidebar.header("💼 Portfolio")
 
-symbol = st.sidebar.text_input("Add Stock (e.g. AAPL)")
-qty = st.sidebar.number_input("Quantity", min_value=1)
+sym = st.sidebar.text_input("Stock (AAPL)")
+qty = st.sidebar.number_input("Qty", min_value=1)
 
-if st.sidebar.button("Add") and symbol:
-    st.session_state.portfolio[symbol.upper()] = qty
+if st.sidebar.button("Add") and sym:
+    price, _, _ = get_stock_data(sym.upper())
+    if price:
+        st.session_state.portfolio[sym.upper()] = {
+            "qty": qty,
+            "buy_price": price
+        }
 
-for sym, qty in st.session_state.portfolio.items():
-    try:
-        data = yf.Ticker(sym).history(period="1d")
-        price = data["Close"].iloc[-1]
-        rate = get_usd_to_inr()
-        value = price * rate * qty
-        st.sidebar.write(f"{sym}: {qty} shares = ₹{value:,.2f}")
-    except:
-        pass
+# ========================
+# 💰 DASHBOARD
+# ========================
+st.subheader("📊 Portfolio Overview")
 
+total_value = 0
+total_investment = 0
+
+for sym, data in st.session_state.portfolio.items():
+    current, change, percent = get_stock_data(sym)
+
+    if current:
+        value = current * data["qty"]
+        investment = data["buy_price"] * data["qty"]
+
+        pnl = value - investment
+        pnl_percent = (pnl / investment) * 100
+
+        total_value += value
+        total_investment += investment
+
+        color = "🟢" if pnl >= 0 else "🔴"
+
+        st.write(
+            f"{color} {sym} | Value: ₹{value:,.0f} | P&L: ₹{pnl:,.0f} ({pnl_percent:.2f}%)"
+        )
+
+# TOTAL
+if total_investment > 0:
+    total_pnl = total_value - total_investment
+    total_percent = (total_pnl / total_investment) * 100
+
+    color = "🟢" if total_pnl >= 0 else "🔴"
+
+    st.markdown("---")
+    st.markdown(f"### {color} Total Value: ₹{total_value:,.0f}")
+    st.markdown(f"### {color} Total P&L: ₹{total_pnl:,.0f} ({total_percent:.2f}%)")
 
 # ========================
 # 💬 CHAT
@@ -206,47 +161,31 @@ for sym, qty in st.session_state.portfolio.items():
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-for msg in st.session_state.messages:
-    st.chat_message(msg["role"]).write(msg["content"])
+for m in st.session_state.messages:
+    st.chat_message(m["role"]).write(m["content"])
 
-user_input = st.chat_input("Ask about stocks, gold, or market trends...")
+user = st.chat_input("Ask about stocks...")
 
-if user_input:
-    st.chat_message("user").write(user_input)
-    st.session_state.messages.append({"role": "user", "content": user_input})
+if user:
+    st.chat_message("user").write(user)
+    st.session_state.messages.append({"role": "user", "content": user})
 
-    context_data = None
-    detected_symbol = None
-    lower = user_input.lower()
+    context = None
+    symbol = None
 
-    if "gold" in lower:
-        context_data = get_gold_price()
+    for word in user.upper().split():
+        price, _, _ = get_stock_data(word)
+        if price:
+            symbol = word
+            context = f"{word} price: ₹{price:,.0f}"
+            break
 
-    elif any(s in lower for s in ["aapl", "tsla", "msft", "googl", "amzn", "meta", "nvda"]):
-        for word in user_input.upper().split():
-            detected_symbol = word
-            context_data = get_stock_price(word)
-            if context_data:
-                break
+    reply = ask_ai(user, context)
 
-    # AI
-    with st.spinner("Analyzing..."):
-        ai_reply = ask_ai(user_input, context_data)
-
-    # 🔥 ZERODHA STYLE CHART
-    if detected_symbol:
-        fig = plot_candlestick(detected_symbol)
+    if symbol:
+        fig = plot_chart(symbol)
         if fig:
             st.plotly_chart(fig, use_container_width=True)
 
-    # AI Advice
-    if context_data:
-        advice = get_investment_advice(context_data)
-        ai_reply += f"\n\n📊 **AI Recommendation:**\n{advice}"
-
-    final_reply = f"{context_data}\n\n{ai_reply}" if context_data else ai_reply
-
-    st.chat_message("assistant").write(final_reply)
-    st.session_state.messages.append(
-        {"role": "assistant", "content": final_reply}
-    )
+    st.chat_message("assistant").write(reply)
+    st.session_state.messages.append({"role": "assistant", "content": reply})

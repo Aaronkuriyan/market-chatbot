@@ -64,11 +64,11 @@ def get_gold_price():
         return "Error fetching gold price"
 
 # ========================
-# 📈 CHART
+# 📈 CHART (ZERODHA STYLE)
 # ========================
-def get_chart(symbol, period):
+def plot_chart(symbol):
     try:
-        data = yf.Ticker(symbol).history(period=period)
+        data = yf.Ticker(symbol).history(period="1mo")
         rate = get_rate()
 
         data[["Open", "High", "Low", "Close"]] *= rate
@@ -85,8 +85,8 @@ def get_chart(symbol, period):
 
         fig.update_layout(
             template="plotly_dark",
-            xaxis_rangeslider_visible=False,
-            height=500
+            title=f"{symbol} Chart (INR)",
+            xaxis_rangeslider_visible=False
         )
 
         return fig
@@ -107,23 +107,23 @@ def ask_ai(q, context=None):
     return res.choices[0].message.content
 
 # ========================
-# 🎨 UI
+# 🎨 UI (UNCHANGED TITLE)
 # ========================
-st.set_page_config(layout="wide", page_title="Trading Dashboard")
-st.title("📊 Zerodha-Style AI Trading Dashboard")
+st.set_page_config(page_title="AI Market Chatbot", page_icon="📈")
+st.title("📈 AI Market Chatbot")
 
 # ========================
-# 💼 PORTFOLIO
+# 💼 PORTFOLIO (SIDEBAR)
 # ========================
 if "portfolio" not in st.session_state:
     st.session_state.portfolio = {}
 
 st.sidebar.title("💼 Portfolio")
 
-sym = st.sidebar.text_input("Stock Symbol")
+sym = st.sidebar.text_input("Add Stock (AAPL)")
 qty = st.sidebar.number_input("Quantity", min_value=1)
 
-if st.sidebar.button("Add Stock") and sym:
+if st.sidebar.button("Add") and sym:
     price, _, _ = get_stock(sym.upper())
     if price:
         st.session_state.portfolio[sym.upper()] = {
@@ -131,93 +131,56 @@ if st.sidebar.button("Add Stock") and sym:
             "buy": price
         }
 
-# ========================
-# 📊 KPI
-# ========================
-col1, col2, col3 = st.columns(3)
-
-total_val = 0
-total_inv = 0
-
+# Portfolio Display
 for s, d in st.session_state.portfolio.items():
     curr, _, _ = get_stock(s)
-    if curr:
-        total_val += curr * d["qty"]
-        total_inv += d["buy"] * d["qty"]
-
-pnl = total_val - total_inv
-percent = (pnl / total_inv * 100) if total_inv else 0
-
-col1.metric("💰 Portfolio Value", f"₹{total_val:,.0f}")
-col2.metric("📈 Profit / Loss", f"₹{pnl:,.0f}", f"{percent:.2f}%")
-col3.metric("📊 Holdings", len(st.session_state.portfolio))
-
-st.markdown("---")
-
-# ========================
-# 📋 HOLDINGS
-# ========================
-st.subheader("📋 Holdings")
-
-for s, d in st.session_state.portfolio.items():
-    curr, change, pct = get_stock(s)
 
     if curr:
         value = curr * d["qty"]
         pnl = value - (d["buy"] * d["qty"])
+        percent = (pnl / (d["buy"] * d["qty"])) * 100
 
         color = "🟢" if pnl >= 0 else "🔴"
 
-        st.write(
-            f"{color} {s} | ₹{value:,.0f} | P&L: ₹{pnl:,.0f} ({pct:.2f}%)"
+        st.sidebar.write(
+            f"{color} {s} → ₹{value:,.0f} ({percent:.2f}%)"
         )
 
-st.markdown("---")
-
 # ========================
-# 📈 CHART
+# 💬 CHAT
 # ========================
-st.subheader("📈 Chart")
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-symbol = st.text_input("Enter stock for chart (AAPL)")
-timeframe = st.radio("Timeframe", ["1d", "5d", "1mo", "6mo"])
+for msg in st.session_state.messages:
+    st.chat_message(msg["role"]).write(msg["content"])
 
-if symbol:
-    fig = get_chart(symbol.upper(), timeframe)
-    if fig:
-        st.plotly_chart(fig, use_container_width=True)
-
-st.markdown("---")
-
-# ========================
-# 🤖 CHAT
-# ========================
-st.subheader("🤖 AI Assistant")
-
-if "chat" not in st.session_state:
-    st.session_state.chat = []
-
-for m in st.session_state.chat:
-    st.chat_message(m["role"]).write(m["content"])
-
-user = st.chat_input("Ask about stocks or gold...")
+user = st.chat_input("Ask about stocks, gold, or market trends...")
 
 if user:
     st.chat_message("user").write(user)
-    st.session_state.chat.append({"role": "user", "content": user})
+    st.session_state.messages.append({"role": "user", "content": user})
 
     context = None
+    symbol = None
 
     if "gold" in user.lower():
         context = get_gold_price()
     else:
-        for w in user.upper().split():
-            price, _, _ = get_stock(w)
+        for word in user.upper().split():
+            price, _, _ = get_stock(word)
             if price:
-                context = f"{w} price ₹{price:,.0f}"
+                symbol = word
+                context = f"{word} price ₹{price:,.0f}"
                 break
 
     reply = ask_ai(user, context)
 
+    # 📊 Chart
+    if symbol:
+        fig = plot_chart(symbol)
+        if fig:
+            st.plotly_chart(fig, use_container_width=True)
+
     st.chat_message("assistant").write(reply)
-    st.session_state.chat.append({"role": "assistant", "content": reply})
+    st.session_state.messages.append({"role": "assistant", "content": reply})

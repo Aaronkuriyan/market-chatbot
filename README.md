@@ -1,5 +1,6 @@
 # AI Market Assistant
 ChatGPT-style AI chatbot that provides live crypto and stock data with interactive charts.
+Still in progress ,More features to come.
 ## Features
 - ChatGPT-style interface
 - Live stock & crypto prices
